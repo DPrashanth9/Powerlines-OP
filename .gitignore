@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+venv/
+env/
+__pycache__/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.vite/
+
+# Environment variables (IMPORTANT - Contains secrets!)
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
