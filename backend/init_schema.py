@@ -32,7 +32,18 @@ def create_constraints():
 
 
 def create_sample_data():
-    """Create sample power grid data for testing"""
+    """
+    Create sample power grid data for testing
+    
+    NOTE: This creates San Francisco demo data. 
+    For Overland Park visualization, use Overpass API endpoints instead.
+    This function is kept for Neo4j path traversal features but not used for map view.
+    """
+    # DISABLED: This creates SF demo data. Use Overpass API for real data instead.
+    return 0
+    
+    # Original SF demo data (commented out):
+    """
     sample_data = """
     // Create a sample power generation plant
     CREATE (pg:Component:PowerGeneration {
@@ -193,9 +204,10 @@ def main():
         logger.info("📋 Creating constraints and indexes...")
         create_constraints()
         
-        # Create sample data
-        logger.info("\n📦 Creating sample power grid data...")
-        create_sample_data()
+        # Create sample data (DISABLED - using Overpass API for real data instead)
+        # logger.info("\n📦 Creating sample power grid data...")
+        # create_sample_data()
+        logger.info("\n📦 Skipping demo data - using Overpass API for real Overland Park data")
         
         # Verify
         logger.info("\n🔍 Verifying schema...")

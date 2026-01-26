@@ -22,24 +22,29 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application lifespan - connect to Neo4j on startup"""
-    # Startup: Connect to Neo4j
+    """Manage application lifespan - connect to Neo4j on startup (optional)"""
+    # Startup: Try to connect to Neo4j (optional for map view)
     logger.info("🚀 Starting Power Grid Visualizer API...")
+    logger.info("📡 Overland Park map endpoints available (Neo4j optional)")
+    
     try:
         neo4j_driver.connect()
         if neo4j_driver.test_connection():
-            logger.info("✅ Neo4j connection verified!")
+            logger.info("✅ Neo4j connection verified! (Path traversal features enabled)")
         else:
-            logger.warning("⚠️ Neo4j connection test failed")
+            logger.warning("⚠️ Neo4j connection test failed (Map view still works)")
     except Exception as e:
-        logger.error(f"❌ Failed to connect to Neo4j: {e}")
-        logger.error("Please check your .env file and ensure Neo4j is running")
+        logger.warning(f"⚠️ Neo4j not available: {e}")
+        logger.info("ℹ️  Map view works without Neo4j. Start Neo4j for path traversal features.")
     
     yield
     
-    # Shutdown: Close Neo4j connection
+    # Shutdown: Close Neo4j connection if it exists
     logger.info("🛑 Shutting down...")
-    neo4j_driver.close()
+    try:
+        neo4j_driver.close()
+    except:
+        pass  # Ignore if not connected
 
 
 app = FastAPI(
@@ -52,7 +57,7 @@ app = FastAPI(
 # CORS middleware to allow frontend to communicate with backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,6 +65,8 @@ app.add_middleware(
 
 # Include API routers
 app.include_router(components.router)
+from app.api import overland_park
+app.include_router(overland_park.router)
 
 
 @app.get("/")
@@ -74,11 +81,16 @@ async def root():
 @app.get("/api/health")
 async def health():
     """Health check endpoint with Neo4j connection status"""
-    neo4j_status = neo4j_driver.test_connection()
+    try:
+        neo4j_status = neo4j_driver.test_connection()
+    except:
+        neo4j_status = False
+    
     return {
-        "status": "healthy",
+        "status": "ok",
         "neo4j_connected": neo4j_status,
-        "neo4j_uri": neo4j_driver.uri if neo4j_status else None
+        "neo4j_uri": neo4j_driver.uri if neo4j_status else None,
+        "message": "Map endpoints work without Neo4j. Neo4j is optional for path traversal features."
     }
 
 

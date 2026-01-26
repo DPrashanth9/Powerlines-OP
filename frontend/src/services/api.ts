@@ -1,9 +1,10 @@
 /**
  * API service for communicating with the backend
+ * Updated for Overland Park power infrastructure endpoints
  */
 
 import axios from 'axios';
-import type { Component, PathToSource, ComponentType } from '../types';
+import type { FeatureCollection } from 'geojson';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -15,35 +16,37 @@ const api = axios.create({
 });
 
 /**
- * Get all components, optionally filtered by type
- */
-export const getComponents = async (componentType?: ComponentType): Promise<Component[]> => {
-  const params = componentType ? { component_type: componentType } : {};
-  const response = await api.get<Component[]>('/api/components', { params });
-  return response.data;
-};
-
-/**
- * Get a single component by ID
- */
-export const getComponent = async (componentId: string): Promise<Component> => {
-  const response = await api.get<Component>(`/api/components/${componentId}`);
-  return response.data;
-};
-
-/**
- * Get the path from a component back to its power source
- */
-export const getPathToSource = async (componentId: string): Promise<PathToSource> => {
-  const response = await api.get<PathToSource>(`/api/components/${componentId}/path-to-source`);
-  return response.data;
-};
-
-/**
  * Health check endpoint
  */
-export const checkHealth = async (): Promise<{ status: string; neo4j_connected: boolean }> => {
-  const response = await api.get('/api/health');
+export const checkHealth = async (): Promise<{ status: string }> => {
+  const response = await api.get('/health');
+  return response.data;
+};
+
+/**
+ * Get Overland Park boundary
+ */
+export const getBoundary = async (): Promise<FeatureCollection> => {
+  const response = await api.get<FeatureCollection>('/api/op/boundary');
+  return response.data;
+};
+
+/**
+ * Get power infrastructure for bounding box
+ */
+export const getPowerInfrastructure = async (
+  bbox: string
+): Promise<{
+  geojson: FeatureCollection;
+  stats: {
+    transmission_miles: number;
+    distribution_miles: number;
+    substation_count: number;
+  };
+}> => {
+  const response = await api.get('/api/op/power', {
+    params: { bbox },
+  });
   return response.data;
 };
 
