@@ -55,9 +55,15 @@ app = FastAPI(
 )
 
 # CORS middleware to allow frontend to communicate with backend
+# Get allowed origins from environment variable or use defaults
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:5173"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Frontend URLs
+    allow_origins=allowed_origins,  # Frontend URLs (local + production)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
