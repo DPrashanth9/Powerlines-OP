@@ -32,11 +32,29 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
   const popup = useRef<mapboxgl.Popup | null>(null);
   const lastBbox = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
-
-  // Layer visibility state
+  
+  // Layer visibility state (MUST be declared before refs that use them)
   const [showTransmission, setShowTransmission] = useState(true);
   const [showDistribution, setShowDistribution] = useState(true);
   const [showSubstations, setShowSubstations] = useState(true);
+  
+  // Use refs to track current visibility states (always up-to-date)
+  const transmissionVisibleRef = useRef(showTransmission);
+  const distributionVisibleRef = useRef(showDistribution);
+  const substationsVisibleRef = useRef(showSubstations);
+  
+  // Update refs when state changes
+  useEffect(() => {
+    transmissionVisibleRef.current = showTransmission;
+  }, [showTransmission]);
+  
+  useEffect(() => {
+    distributionVisibleRef.current = showDistribution;
+  }, [showDistribution]);
+  
+  useEffect(() => {
+    substationsVisibleRef.current = showSubstations;
+  }, [showSubstations]);
 
   // Initialize map
   useEffect(() => {
@@ -214,11 +232,16 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
         ],
       };
 
-      // Store current visibility states from React state (more reliable than reading from map)
-      // This ensures we use the actual user's toggle state, not what might be on the map
-      const transmissionVisible = showTransmission;
-      const distributionVisible = showDistribution;
-      const substationsVisible = showSubstations;
+      // Use refs to get current visibility states (always up-to-date, even during async operations)
+      const transmissionVisible = transmissionVisibleRef.current;
+      const distributionVisible = distributionVisibleRef.current;
+      const substationsVisible = substationsVisibleRef.current;
+      
+      console.log('Loading data with visibility states:', {
+        transmission: transmissionVisible,
+        distribution: distributionVisible,
+        substations: substationsVisible
+      });
 
       // Update existing source instead of removing/re-adding (prevents flicker and disappearing)
       if (map.current.getSource('power-data')) {
@@ -359,26 +382,49 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
         });
       }
 
-      // Restore visibility states immediately after data update (preserve user's toggle choices)
-      // Use requestAnimationFrame to ensure it happens after Mapbox renders
+      // Restore visibility states AFTER layers are created
+      // Use double requestAnimationFrame to ensure Mapbox has fully rendered layers
+      // IMPORTANT: Use refs to get current state (in case user toggled during data load)
       requestAnimationFrame(() => {
-        if (map.current) {
-          if (map.current.getLayer('transmission-lines')) {
-            map.current.setLayoutProperty('transmission-lines', 'visibility', transmissionVisible ? 'visible' : 'none');
+        requestAnimationFrame(() => {
+          if (map.current) {
+            // Get current visibility from refs (always up-to-date)
+            const currentTransmission = transmissionVisibleRef.current;
+            const currentDistribution = distributionVisibleRef.current;
+            const currentSubstations = substationsVisibleRef.current;
+            
+            // Restore transmission visibility (use current ref value)
+            if (map.current.getLayer('transmission-lines')) {
+              const vis = currentTransmission ? 'visible' : 'none';
+              map.current.setLayoutProperty('transmission-lines', 'visibility', vis);
+              console.log('🔄 DATA LOAD: Restored transmission-lines visibility:', vis);
+            }
+            if (map.current.getLayer('transmission-points')) {
+              const vis = currentTransmission ? 'visible' : 'none';
+              map.current.setLayoutProperty('transmission-points', 'visibility', vis);
+              console.log('🔄 DATA LOAD: Restored transmission-points visibility:', vis);
+            }
+            
+            // Restore distribution visibility (use current ref value)
+            if (map.current.getLayer('distribution-lines')) {
+              const vis = currentDistribution ? 'visible' : 'none';
+              map.current.setLayoutProperty('distribution-lines', 'visibility', vis);
+              console.log('🔄 DATA LOAD: Restored distribution-lines visibility:', vis);
+            }
+            if (map.current.getLayer('distribution-points')) {
+              const vis = currentDistribution ? 'visible' : 'none';
+              map.current.setLayoutProperty('distribution-points', 'visibility', vis);
+              console.log('🔄 DATA LOAD: Restored distribution-points visibility:', vis);
+            }
+            
+            // Restore substations visibility (use current ref value)
+            if (map.current.getLayer('substations')) {
+              const vis = currentSubstations ? 'visible' : 'none';
+              map.current.setLayoutProperty('substations', 'visibility', vis);
+              console.log('🔄 DATA LOAD: Restored substations visibility:', vis);
+            }
           }
-          if (map.current.getLayer('transmission-points')) {
-            map.current.setLayoutProperty('transmission-points', 'visibility', transmissionVisible ? 'visible' : 'none');
-          }
-          if (map.current.getLayer('distribution-lines')) {
-            map.current.setLayoutProperty('distribution-lines', 'visibility', distributionVisible ? 'visible' : 'none');
-          }
-          if (map.current.getLayer('distribution-points')) {
-            map.current.setLayoutProperty('distribution-points', 'visibility', distributionVisible ? 'visible' : 'none');
-          }
-          if (map.current.getLayer('substations')) {
-            map.current.setLayoutProperty('substations', 'visibility', substationsVisible ? 'visible' : 'none');
-          }
-        }
+        });
       });
 
       // Remove old click handlers before adding new ones (prevent duplicates)
@@ -594,30 +640,30 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
   }, [mapLoaded, loadPowerData]);
 
   // Toggle layer visibility (lines and their markers together)
-  // Use separate useEffects to ensure independence
-  // Force immediate update when state changes
+  // These effects run IMMEDIATELY when toggle state changes
+  // They take priority over any data reload visibility restoration
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
     const visibility = showTransmission ? 'visible' : 'none';
     
-    // Update transmission lines
+    // Update transmission lines IMMEDIATELY
     if (map.current.getLayer('transmission-lines')) {
       try {
         map.current.setLayoutProperty('transmission-lines', 'visibility', visibility);
-        console.log('Transmission lines visibility set to:', visibility);
+        console.log('✅ TOGGLE: Transmission lines visibility set to:', visibility);
       } catch (e) {
-        console.error('Error setting transmission-lines visibility:', e);
+        console.error('❌ Error setting transmission-lines visibility:', e);
       }
     }
     
-    // Update transmission points
+    // Update transmission points IMMEDIATELY
     if (map.current.getLayer('transmission-points')) {
       try {
         map.current.setLayoutProperty('transmission-points', 'visibility', visibility);
-        console.log('Transmission points visibility set to:', visibility);
+        console.log('✅ TOGGLE: Transmission points visibility set to:', visibility);
       } catch (e) {
-        console.error('Error setting transmission-points visibility:', e);
+        console.error('❌ Error setting transmission-points visibility:', e);
       }
     }
   }, [showTransmission, mapLoaded]);
@@ -627,23 +673,23 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
 
     const visibility = showDistribution ? 'visible' : 'none';
     
-    // Update distribution lines
+    // Update distribution lines IMMEDIATELY
     if (map.current.getLayer('distribution-lines')) {
       try {
         map.current.setLayoutProperty('distribution-lines', 'visibility', visibility);
-        console.log('Distribution lines visibility set to:', visibility);
+        console.log('✅ TOGGLE: Distribution lines visibility set to:', visibility);
       } catch (e) {
-        console.error('Error setting distribution-lines visibility:', e);
+        console.error('❌ Error setting distribution-lines visibility:', e);
       }
     }
     
-    // Update distribution points
+    // Update distribution points IMMEDIATELY
     if (map.current.getLayer('distribution-points')) {
       try {
         map.current.setLayoutProperty('distribution-points', 'visibility', visibility);
-        console.log('Distribution points visibility set to:', visibility);
+        console.log('✅ TOGGLE: Distribution points visibility set to:', visibility);
       } catch (e) {
-        console.error('Error setting distribution-points visibility:', e);
+        console.error('❌ Error setting distribution-points visibility:', e);
       }
     }
   }, [showDistribution, mapLoaded]);
@@ -653,13 +699,13 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
 
     const visibility = showSubstations ? 'visible' : 'none';
     
-    // Update substations
+    // Update substations IMMEDIATELY
     if (map.current.getLayer('substations')) {
       try {
         map.current.setLayoutProperty('substations', 'visibility', visibility);
-        console.log('Substations visibility set to:', visibility);
+        console.log('✅ TOGGLE: Substations visibility set to:', visibility);
       } catch (e) {
-        console.error('Error setting substations visibility:', e);
+        console.error('❌ Error setting substations visibility:', e);
       }
     }
   }, [showSubstations, mapLoaded]);
