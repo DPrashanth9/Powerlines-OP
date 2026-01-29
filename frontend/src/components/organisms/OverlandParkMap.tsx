@@ -1441,8 +1441,8 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
       const deltaY = e.clientY - doubleClickStartPoint.y;
       
       // Get current map state
-      const currentCenter = map.current.getCenter();
       const bounds = map.current.getBounds();
+      if (!bounds) return;
       
       // Get canvas dimensions
       const canvas = map.current.getCanvas();
