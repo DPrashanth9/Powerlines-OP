@@ -39,9 +39,9 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
     highest_voltage: number | null;
     lowest_voltage: number | null;
   } | null>(null);
-  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  // const debounceTimer = useRef<NodeJS.Timeout | null>(null); // Unused
   const popup = useRef<mapboxgl.Popup | null>(null);
-  const lastBbox = useRef<string | null>(null);
+  // const lastBbox = useRef<string | null>(null); // Unused
   const isLoadingRef = useRef(false);
   const dataLoadedRef = useRef(false); // Track if all data has been loaded once
   
@@ -131,13 +131,15 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
           
           // Trigger the same initialization that would happen in 'load' event
           if (map.current) {
-            // Add navigation controls if not already added
-            if (!map.current.getControl('navigation')) {
+            // Add navigation controls (Mapbox handles duplicates)
+            try {
               map.current.addControl(new mapboxgl.NavigationControl({
                 showCompass: true,
                 showZoom: true,
                 visualizePitch: true
               }), 'top-right');
+            } catch (e) {
+              // Control might already exist, ignore
             }
             
             // Add terrain source if needed
@@ -384,10 +386,17 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
     try {
       const result = await getPowerInfrastructure(bbox);
 
+      // Combine all features from transmission, distribution, and transformers
+      const allFeatures: any[] = [
+        ...(result.transmission?.features || []),
+        ...(result.distribution?.features || []),
+        ...(result.transformers?.features || []),
+      ];
+
       // Create point features for line endpoints (markers at start/end of each line)
       const pointFeatures: any[] = [];
       
-      result.geojson.features.forEach((feature: any) => {
+      allFeatures.forEach((feature: any) => {
         if (feature.geometry.type === 'LineString' && feature.geometry.coordinates.length > 0) {
           const coords = feature.geometry.coordinates;
           const powerType = feature.properties.power;
@@ -429,9 +438,10 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
 
       // Combine line features and point features
       const combinedGeoJSON = {
-        ...result.geojson,
+        type: 'FeatureCollection' as const,
         features: [
-          ...result.geojson.features.filter((f: any) => f.geometry.type === 'LineString'),
+          ...allFeatures.filter((f: any) => f.geometry.type === 'LineString'),
+          ...allFeatures.filter((f: any) => f.geometry.type === 'Point'), // Include transformer points
           ...pointFeatures,
         ],
       };
@@ -509,7 +519,6 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
             'line-blur': 1.5, // Subtle glow for energy effect
             // Smooth dashed pattern for continuous flow
             'line-dasharray': [20, 8], // Long dash, gap for smooth flow
-            'line-dasharray-transition': { duration: 0 },
           },
           layout: {
             'line-join': 'round',
@@ -532,7 +541,6 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
             'line-opacity': 0.5,
             'line-blur': 1, // Subtle glow
             'line-dasharray': [18, 10], // Offset pattern for depth
-            'line-dasharray-transition': { duration: 0 },
           },
           layout: {
             'line-join': 'round',
@@ -577,7 +585,6 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
             'line-blur': 1, // Subtle glow
             // Smooth dashed pattern for continuous flow
             'line-dasharray': [15, 6], // Faster flow pattern
-            'line-dasharray-transition': { duration: 0 },
           },
           layout: {
             'line-join': 'round',
@@ -600,7 +607,6 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
             'line-opacity': 0.4,
             'line-blur': 0.8,
             'line-dasharray': [13, 8], // Offset pattern for depth
-            'line-dasharray-transition': { duration: 0 },
           },
           layout: {
             'line-join': 'round',
@@ -748,14 +754,8 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
         });
       }, 100); // Small delay to ensure Mapbox has processed the source update
 
-      // Remove old click handlers before adding new ones (prevent duplicates)
-      map.current.off('click', 'transmission-lines');
-      map.current.off('click', 'distribution-lines');
-      map.current.off('click', 'transformers');
-      map.current.off('click', 'transmission-points');
-      map.current.off('click', 'distribution-points');
-      
       // Add click handlers for lines
+      // Note: Mapbox handles duplicate prevention, so we can just add handlers
       map.current.on('click', 'transmission-lines', handleLineClick);
       map.current.on('click', 'distribution-lines', handleLineClick);
       
@@ -1419,7 +1419,8 @@ export const OverlandParkMap: React.FC<OverlandParkMapProps> = ({ className = ''
         isDoubleClickPanning = true;
         // Flag is already set from first click, keep it set
         doubleClickStartPoint = { x: e.clientX, y: e.clientY };
-        doubleClickStartCenter = map.current.getCenter();
+        const center = map.current.getCenter();
+        doubleClickStartCenter = [center.lng, center.lat] as [number, number];
         
         // Change cursor to indicate panning
         if (map.current.getCanvas()) {

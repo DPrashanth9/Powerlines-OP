@@ -60,6 +60,8 @@ allowed_origins = os.getenv(
     "ALLOWED_ORIGINS",
     "http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178"
 ).split(",")
+# Filter out empty strings from environment variable
+allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,

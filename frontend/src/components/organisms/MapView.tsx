@@ -4,20 +4,20 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import mapboxgl from 'mapbox-gl';
+// import mapboxgl from 'mapbox-gl'; // Unused
 import { useMapbox } from '../../hooks/useMapbox';
 import type { Component, PathToSource } from '../../types';
 
 interface MapViewProps {
   components: Component[];
-  selectedComponent: Component | null;
+  // selectedComponent: Component | null; // Unused
   path: PathToSource | null;
   onComponentClick?: (component: Component) => void;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
   components,
-  selectedComponent,
+  // selectedComponent, // Unused
   path,
   onComponentClick,
 }) => {

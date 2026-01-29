@@ -38,6 +38,7 @@ frontend/.env
 !README.md
 !PROJECT_DOCUMENTATION.md
 !GITHUB_PUSH_GUIDE.md
+!DEPLOYMENT_GUIDE.md
 
 # Test files (optional - remove if you want to keep tests)
 test*.py
@@ -88,9 +89,9 @@ data/
 *.sqlite
 *.sqlite3
 
-# Railway and deployment configs (if not needed)
+# Railway deployment configs (if not needed)
 railway.json
-render.yaml
+# Keep render.yaml and vercel.json for deployment
 
 # LinkedIn posts and other temporary text files
 LINKEDIN_POST*.txt
