@@ -79,15 +79,22 @@ app.include_router(overland_park.router)
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
+    """Root endpoint"""
     return {
         "message": "Power Grid Visualizer API is running",
-        "status": "healthy"
+        "status": "healthy",
+        "docs": "/docs"
     }
 
 
-@app.get("/api/health")
+@app.get("/health")
 async def health():
+    """Health check endpoint for Render (simple)"""
+    return {"status": "ok"}
+
+
+@app.get("/api/health")
+async def health_detailed():
     """Health check endpoint with Neo4j connection status"""
     try:
         neo4j_status = neo4j_driver.test_connection()
