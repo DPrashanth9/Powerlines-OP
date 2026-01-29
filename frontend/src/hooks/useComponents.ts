@@ -58,9 +58,8 @@ export const useComponent = (componentId: string | null) => {
     //     setLoading(false);
     //   }
     // };
+    // fetchComponent();
     setLoading(false);
-
-    fetchComponent();
   }, [componentId]);
 
   return { component, loading, error };
@@ -91,9 +90,8 @@ export const usePathToSource = (componentId: string | null) => {
     //     setLoading(false);
     //   }
     // };
+    // fetchPath();
     setLoading(false);
-
-    fetchPath();
   }, [componentId]);
 
   return { path, loading, error };
