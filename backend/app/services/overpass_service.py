@@ -5,6 +5,7 @@ Handles Overland Park boundary and power infrastructure queries
 
 import httpx
 import math
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from geojson import FeatureCollection, Feature, Point, LineString, Polygon
 import logging
@@ -117,13 +118,13 @@ def calculate_linestring_length(coordinates: List[List[float]]) -> float:
     return total_km
 
 
-async def query_overpass(query: str, timeout: int = 180) -> Dict[str, Any]:
+async def query_overpass(query: str, timeout: int = 60) -> Dict[str, Any]:
     """
     Query Overpass API with fallback servers
     
     Args:
         query: Overpass QL query string
-        timeout: Request timeout in seconds
+        timeout: Request timeout in seconds (reduced to 60s for faster failures)
         
     Returns:
         Overpass API response JSON
@@ -135,7 +136,8 @@ async def query_overpass(query: str, timeout: int = 180) -> Dict[str, Any]:
     
     for url in OVERPASS_URLS:
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            # Use shorter timeout for faster response
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10)) as client:
                 response = await client.post(
                     url,
                     data=query,
@@ -143,6 +145,10 @@ async def query_overpass(query: str, timeout: int = 180) -> Dict[str, Any]:
                 )
                 response.raise_for_status()
                 return response.json()
+        except httpx.TimeoutException as e:
+            last_error = e
+            logger.warning(f"Overpass server {url} timed out: {e}, trying next...")
+            continue
         except Exception as e:
             last_error = e
             logger.warning(f"Overpass server {url} failed: {e}, trying next...")
@@ -257,8 +263,8 @@ async def get_power_infrastructure(bbox: Tuple[float, float, float, float]) -> D
     global _power_cache
     import time
     
-    # Round bbox for caching
-    rounded_bbox = round_bbox(bbox)
+    # Round bbox for caching (use 3 decimals for better cache hits)
+    rounded_bbox = round_bbox(bbox, decimals=3)
     bbox_key = str(rounded_bbox)
     
     # Check cache
@@ -266,8 +272,11 @@ async def get_power_infrastructure(bbox: Tuple[float, float, float, float]) -> D
     if bbox_key in _power_cache:
         cached_data, cache_time = _power_cache[bbox_key]
         if (current_time - cache_time) < POWER_CACHE_TTL:
-            logger.info(f"Returning cached power data for bbox {bbox_key}")
+            logger.info(f"✅ Cache HIT for bbox {bbox_key} (age: {current_time - cache_time:.1f}s)")
             return cached_data
+    
+    logger.info(f"⏳ Fetching power data for bbox {bbox_key} (cache miss)")
+    start_time = time.time()
     
     # Validate bbox size
     diagonal_km = calculate_bbox_diagonal(bbox)
@@ -276,13 +285,14 @@ async def get_power_infrastructure(bbox: Tuple[float, float, float, float]) -> D
     
     south, west, north, east = bbox
     
-    # Overpass query for power infrastructure
+    # Optimized Overpass query for power infrastructure
+    # Using shorter timeout and optimized output format
     query = f"""
-    [out:json][timeout:180];
+    [out:json][timeout:25];
     (
       way["power"="line"]({south},{west},{north},{east});
       way["power"="minor_line"]({south},{west},{north},{east});
-      node["power"="substation"]({south},{west},{north},{east});
+      node["power"="transformer"]({south},{west},{north},{east});
     );
     out geom;
     """
@@ -293,7 +303,8 @@ async def get_power_infrastructure(bbox: Tuple[float, float, float, float]) -> D
         features = []
         transmission_miles = 0.0
         distribution_miles = 0.0
-        substation_count = 0
+        transformer_count = 0
+        voltage_values = []  # Track all voltage values for analysis
         
         for element in result.get("elements", []):
             element_type = element.get("type")
@@ -315,53 +326,104 @@ async def get_power_infrastructure(bbox: Tuple[float, float, float, float]) -> D
                         else:
                             distribution_miles += length_miles
                         
+                        # Track voltage for analysis
+                        voltage_str = tags.get("voltage", "")
+                        if voltage_str:
+                            try:
+                                # Extract numeric voltage value (handle formats like "138000", "138 kV", etc.)
+                                voltage_match = re.search(r'(\d+)', str(voltage_str).replace(',', ''))
+                                if voltage_match:
+                                    voltage_val = int(voltage_match.group(1))
+                                    voltage_values.append(voltage_val)
+                            except (ValueError, AttributeError):
+                                pass
+                        
+                        # Include ALL tags from OSM, plus computed fields
+                        # Filter out empty values during construction for better performance
+                        properties = {
+                            "power": power_type,
+                            "osm_id": element.get("id"),
+                            "length_km": round(length_km, 3),
+                            "length_miles": round(length_miles, 3),
+                        }
+                        # Add all non-empty tags
+                        for k, v in tags.items():
+                            if v and str(v).strip():  # Only add non-empty values
+                                properties[k] = v
+                        
                         feature = Feature(
                             geometry=LineString(coordinates),
-                            properties={
-                                "power": power_type,
-                                "name": tags.get("name", ""),
-                                "operator": tags.get("operator", ""),
-                                "voltage": tags.get("voltage", ""),
-                                "cables": tags.get("cables", ""),
-                                "osm_id": element.get("id"),
-                                "length_km": round(length_km, 3),
-                                "length_miles": round(length_miles, 3),
-                            }
+                            properties=properties
                         )
                         features.append(feature)
             
-            elif element_type == "node" and power_type == "substation":
+            elif element_type == "node" and power_type == "transformer":
                 # Extract coordinates
                 lon = element.get("lon")
                 lat = element.get("lat")
                 if lon is not None and lat is not None:
-                    substation_count += 1
+                    transformer_count += 1
+                    # Include ALL tags from OSM, plus computed fields
+                    # Filter out empty values during construction for better performance
+                    properties = {
+                        "power": "transformer",
+                        "osm_id": element.get("id"),
+                    }
+                    # Add all non-empty tags
+                    for k, v in tags.items():
+                        if v and str(v).strip():  # Only add non-empty values
+                            properties[k] = v
+                    
+                    # Track voltage for analysis
+                    voltage_str = tags.get("voltage", "")
+                    if voltage_str:
+                        try:
+                            # Extract numeric voltage value (handle formats like "138000", "138 kV", etc.)
+                            voltage_match = re.search(r'(\d+)', str(voltage_str).replace(',', ''))
+                            if voltage_match:
+                                voltage_val = int(voltage_match.group(1))
+                                voltage_values.append(voltage_val)
+                                logger.debug(f"Found voltage {voltage_val} from transformer {element.get('id')}")
+                        except (ValueError, AttributeError) as e:
+                            logger.debug(f"Could not parse voltage '{voltage_str}': {e}")
+                            pass
+                    
                     feature = Feature(
                         geometry=Point([lon, lat]),
-                        properties={
-                            "power": "substation",
-                            "name": tags.get("name", ""),
-                            "operator": tags.get("operator", ""),
-                            "voltage": tags.get("voltage", ""),
-                            "substation": tags.get("substation", ""),
-                            "osm_id": element.get("id"),
-                        }
+                        properties=properties
                     )
                     features.append(feature)
         
         feature_collection = FeatureCollection(features)
+        
+        # Calculate voltage statistics
+        highest_voltage = None
+        lowest_voltage = None
+        if voltage_values:
+            highest_voltage = max(voltage_values)
+            lowest_voltage = min(voltage_values)
+            logger.info(f"Voltage range: {lowest_voltage}V - {highest_voltage}V ({len(voltage_values)} values found)")
+        else:
+            logger.info("No voltage data found in current view")
         
         result_data = {
             "geojson": feature_collection,
             "stats": {
                 "transmission_miles": round(transmission_miles, 2),
                 "distribution_miles": round(distribution_miles, 2),
-                "substation_count": substation_count,
+                "transformer_count": transformer_count,
+                "highest_voltage": highest_voltage,
+                "lowest_voltage": lowest_voltage,
             }
         }
         
+        logger.info(f"Returning stats: transformers={transformer_count}, voltage_range={lowest_voltage}-{highest_voltage}")
+        
         # Cache result
         _power_cache[bbox_key] = (result_data, current_time)
+        
+        elapsed = time.time() - start_time
+        logger.info(f"✅ Power data fetched in {elapsed:.2f}s - {len(features)} features, cache updated")
         
         return result_data
         
